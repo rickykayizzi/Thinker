@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiet Notes</title>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:system-ui,-apple-system;
+  background:#0f1115;
+  color:#e6e6e6;
+  height:100vh;
+  overflow:hidden;
+}
+
+/* Header */
+header{
+  height:52px;
+  background:#151821;
+  display:flex;
+  align-items:center;
+  padding:0 14px;
+  gap:12px;
+}
+.hamburger{font-size:22px;cursor:pointer}
+#title{
+  flex:1;
+  background:none;
+  border:none;
+  color:#e6e6e6;
+  font-size:16px;
+  outline:none;
+}
+
+/* Floating Calculator */
+#calc{
+  position:fixed;
+  top:8px;
+  right:8px;
+  width:130px;
+  background:#1c2030;
+  border-radius:10px;
+  padding:8px;
+  z-index:999; /* stays above everything */
+  box-shadow:0 10px 25px rgba(0,0,0,.5);
+}
+#calc input{
+  width:100%;
+  background:#000;
+  border:none;
+  color:#00ffcc;
+  font-size:14px;
+  text-align:right;
+  padding:6px;
+  margin-bottom:6px;
+  border-radius:6px;
+}
+.calc-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:4px;
+}
+.calc-grid button{
+  padding:6px;
+  background:#2a2f45;
+  border:none;
+  color:#fff;
+  border-radius:6px;
+  font-size:13px;
+  cursor:pointer;
+}
+.calc-grid button:active{background:#3a4060}
+
+/* Menu */
+#menu{
+  position:absolute;
+  top:52px;
+  left:10px;
+  background:#1c2030;
+  border-radius:10px;
+  display:none;
+  z-index:20;
+}
+#menu button{
+  display:block;
+  width:100%;
+  padding:10px 14px;
+  background:none;
+  border:none;
+  color:#fff;
+  text-align:left;
+}
+#menu button:hover{background:#2a2f45}
+
+/* Drawer */
+#drawer{
+  position:absolute;
+  top:52px;
+  left:-260px;
+  width:260px;
+  height:calc(100% - 52px);
+  background:#11141c;
+  transition:.25s;
+  overflow-y:auto;
+  z-index:15;
+}
+#drawer.open{left:0}
+.note-item{
+  padding:12px;
+  border-bottom:1px solid #1e2233;
+  cursor:pointer;
+}
+.note-item.active{background:#23294a}
+
+/* Editor */
+#editor{
+  height:calc(100% - 52px);
+  display:flex;
+  flex-direction:column;
+}
+#content{
+  flex:1;
+  padding:16px;
+  background:transparent;
+  border:none;
+  color:#f1f1f1;
+  font-size:15px;
+  outline:none;
+  resize:none;
+}
+#preview{
+  flex:1;
+  padding:16px;
+  overflow-y:auto;
+  display:none;
+}
+
+/* Footer */
+footer{
+  height:30px;
+  font-size:12px;
+  padding:6px 12px;
+  background:#121520;
+  display:flex;
+  justify-content:space-between;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="hamburger" onclick="toggleMenu()">☰</div>
+  <input id="title" placeholder="Untitled note">
+</header>
+
+<!-- FLOATING CALCULATOR -->
+<div id="calc">
+  <input id="calcDisplay" readonly>
+  <div class="calc-grid">
+    <button onclick="c('7')">7</button><button onclick="c('8')">8</button><button onclick="c('9')">9</button><button onclick="c('/')">÷</button>
+    <button onclick="c('4')">4</button><button onclick="c('5')">5</button><button onclick="c('6')">6</button><button onclick="c('*')">×</button>
+    <button onclick="c('1')">1</button><button onclick="c('2')">2</button><button onclick="c('3')">3</button><button onclick="c('-')">−</button>
+    <button onclick="c('0')">0</button><button onclick="c('.')">.</button><button onclick="calcEq()">=</button><button onclick="c('+')">+</button>
+    <button onclick="calcClear()" style="grid-column:span 4">C</button>
+  </div>
+</div>
+
+<div id="menu">
+  <button onclick="newNote()">New note</button>
+  <button onclick="openNotes()">All notes</button>
+  <button onclick="renameNote()">Rename</button>
+  <button onclick="togglePreview()">Toggle preview</button>
+  <button onclick="setColor('purple')">Purple</button>
+  <button onclick="setColor('teal')">Teal</button>
+  <button onclick="setColor('rose')">Rose</button>
+  <button onclick="deleteNote()">Delete</button>
+</div>
+
+<div id="drawer"></div>
+
+<div id="editor">
+  <textarea id="content" placeholder="Write in Markdown..."></textarea>
+  <div id="preview"></div>
+</div>
+
+<footer>
+  <span id="count">0 words</span>
+  <span>Quiet Notes</span>
+</footer>
+
+<script>
+/* Calculator */
+const cd=document.getElementById("calcDisplay");
+function c(v){cd.value+=v}
+function calcClear(){cd.value=""}
+function calcEq(){
+  try{cd.value=eval(cd.value)}catch{cd.value="Err"}
+}
+
+/* Password */
+let PASS=sessionStorage.getItem("qn_pass");
+if(!PASS){PASS=prompt("Enter password");sessionStorage.setItem("qn_pass",PASS)}
+const enc=t=>btoa(PASS+t);
+const dec=t=>atob(t).replace(PASS,"");
+
+/* Notes */
+const KEY="quiet_notes";
+let notes=JSON.parse(localStorage.getItem(KEY))||[];
+let active=null;
+let preview=false;
+
+function save(){localStorage.setItem(KEY,JSON.stringify(notes))}
+function newNote(){
+  closeMenu();
+  const n={id:Date.now(),title:"",content:"",color:""};
+  notes.unshift(n);active=n.id;load(active)
+}
+function load(id){
+  const n=notes.find(x=>x.id===id);if(!n)return;
+  active=id;
+  title.value=n.title;
+  content.value=dec(n.content||"");
+  editor.style.background=n.color||"";
+  renderDrawer();
+}
+function saveNote(){
+  const n=notes.find(x=>x.id===active);if(!n)return;
+  n.title=title.value;n.content=enc(content.value);save()
+}
+function renameNote(){
+  closeMenu();
+  const n=notes.find(x=>x.id===active);if(!n)return;
+  const t=prompt("New title",n.title);
+  if(t!==null){n.title=t;title.value=t;save();renderDrawer()}
+}
+function deleteNote(){
+  closeMenu();
+  if(!confirm("Delete note?"))return;
+  notes=notes.filter(n=>n.id!==active);
+  active=null;title.value="";content.value="";
+  save();renderDrawer()
+}
+
+/* UI */
+const menu=document.getElementById("menu");
+const drawer=document.getElementById("drawer");
+function toggleMenu(){menu.style.display=menu.style.display==="block"?"none":"block"}
+function closeMenu(){menu.style.display="none"}
+document.addEventListener("click",e=>{
+  if(!menu.contains(e.target)&&!e.target.classList.contains("hamburger")) closeMenu()
+});
+function openNotes(){
+  closeMenu();
+  drawer.classList.toggle("open");
+  renderDrawer();
+}
+function renderDrawer(){
+  drawer.innerHTML="";
+  notes.forEach(n=>{
+    const d=document.createElement("div");
+    d.className="note-item"+(n.id===active?" active":"");
+    d.textContent=n.title||"Untitled";
+    d.onclick=()=>{load(n.id);drawer.classList.remove("open")};
+    drawer.appendChild(d)
+  })
+}
+
+/* Markdown */
+function togglePreview(){
+  closeMenu();
+  preview=!preview;
+  previewDiv.style.display=preview?"block":"none";
+  content.style.display=preview?"none":"block";
+  if(preview) previewDiv.innerHTML=marked.parse(content.value)
+}
+
+/* Colors */
+function setColor(c){
+  closeMenu();
+  const n=notes.find(x=>x.id===active);if(!n)return;
+  const m={
+    purple:"linear-gradient(135deg,#667eea,#764ba2)",
+    teal:"linear-gradient(135deg,#43cea2,#185a9d)",
+    rose:"linear-gradient(135deg,#ff758c,#ff7eb3)"
+  };
+  n.color=m[c];editor.style.background=n.color;save()
+}
+
+/* Word count */
+content.addEventListener("input",()=>{
+  saveNote();
+  count.textContent=content.value.trim().split(/\s+/).filter(Boolean).length+" words"
+});
+
+/* Init */
+if(notes.length) load(notes[0].id); else newNote();
+</script>
+
+</body>
+</html>
